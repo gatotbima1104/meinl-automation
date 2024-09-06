@@ -15,7 +15,8 @@ const email = process.env.EMAIL;
 const password = process.env.PASSWORD;
 const credential_path = "./credential.json";
 const spreadSheet_ID = process.env.SPREADSHEET_ID;
-const range_column = `${process.env.SHEET_NAME}!A:B`;
+// const range_column = `${process.env.SHEET_NAME}!A:B`;
+const sheetNames = process.env.SHEET_NAMES.split(","); // Multiple sheet names
 const loginUrl = "https://b2b.meinl.de/Account/Login";
 
 // Function Authorize Google
@@ -32,11 +33,13 @@ async function authorize() {
 }
 
 // Function Read SpreadSheet
-async function readSpreadsheet(auth) {
+async function readSpreadsheet(auth, sheetName) {
   const sheets = google.sheets({
     version: "v4",
     auth,
   });
+
+  const range_column = `${sheetName}!A:B`; // Dynamic range based on sheetName
 
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadSheet_ID,
@@ -55,7 +58,7 @@ async function readSpreadsheet(auth) {
 }
 
 // Function Write SpreadSheet
-async function writeSpreadsheet(auth, values) {
+async function writeSpreadsheet(auth, sheetName, values) {
   const sheets = google.sheets({
     version: "v4",
     auth,
@@ -67,7 +70,8 @@ async function writeSpreadsheet(auth, values) {
   await sheets.spreadsheets.values.update({
     auth,
     spreadsheetId: spreadSheet_ID,
-    range: `${process.env.SHEET_NAME}!A2:B`,
+    // range: `${process.env.SHEET_NAME}!A2:B`,
+    range: `${sheetName}!A2:B`,
     valueInputOption: "USER_ENTERED",
     resource: {
       values: formattedValues,
@@ -181,19 +185,30 @@ function randomDelay(min, max) {
   
       // Read spreadsheet
       const auth = await authorize();
-      const items = await readSpreadsheet(auth);
-      const codes = items.map((item) => item.code);
-      const codeAvailabilityMap = new Map(items.map(({ code, availability }) => [code, availability]));
 
       // Login
       let isLoginSuccessfully = await login(page, email, password);
       if (!isLoginSuccessfully) {
         return;
       }
+
+      // Loop through each sheet
+    for (const sheetName of sheetNames) {
+      console.log(`Processing sheet: ${sheetName}`);
+
+      const items = await readSpreadsheet(auth, sheetName);
+      const codes = items.map((item) => item.code);
+      const codeAvailabilityMap = new Map(items.map(({ code, availability }) => [code, availability]));
+
+      // Login
+      // let isLoginSuccessfully = await login(page, email, password);
+      // if (!isLoginSuccessfully) {
+      //   return;
+      // }
   
       // Main pages
-      await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
-      await setTimeout(3000);
+      // await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
+      // await setTimeout(3000);
 
       // Loop codes
       for (let code of codes) {
@@ -208,7 +223,8 @@ function randomDelay(min, max) {
             // if (codeAvailabilityMap.get(code)) continue; 
             
             // Search code
-            console.log(`Checking code : ${code} (Attempt: ${retries + 1})`);
+            // console.log(`Checking code : ${code} (Attempt: ${retries + 1})`);
+            console.log(`Checking code: ${code} (Sheet: ${sheetName}, Attempt: ${retries + 1})`);
             await page.waitForSelector('input[type="search"]');
             await page.evaluate(
               () => (document.querySelector('input[type="search"]').value = "")
@@ -269,7 +285,9 @@ function randomDelay(min, max) {
         ([code, availability]) => ({ code, availability })
       );
   
-      await writeSpreadsheet(auth, formattedResults);
+      await writeSpreadsheet(auth, sheetName, formattedResults);
+      console.log(`Finished processing sheet: ${sheetName}`);
+    }
       console.log("All codes tracked successfully");
       await browser.close();
     } catch (error) {
