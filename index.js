@@ -4,12 +4,13 @@ import { google } from "googleapis";
 import { setTimeout } from "timers/promises";
 import fs from "fs";
 import * as dotenv from "dotenv";
+// import chromium from "@sparticuz/chromium";  // Deployment setup
 
 // Pull environment
 dotenv.config();
 puppeteer.use(StealthPlugin());
 
-// Pull credenetials
+// Pull credentials
 const email = process.env.EMAIL;
 const password = process.env.PASSWORD;
 const credential_path = "./credential.json";
@@ -46,6 +47,7 @@ async function readSpreadsheet(auth) {
   if (rows.length) {
     return rows.slice(1).map((row) => ({
       code: row[0],
+      availability: row[1],
     }));
   } else {
     throw new Error("No data found.");
@@ -59,76 +61,81 @@ async function writeSpreadsheet(auth, values) {
     auth,
   });
 
-  const formattedValues = values.map((value) => [value]);
+  // Formatted values
+  const formattedValues = values.map(({ code, availability }) => [code, availability]);
 
-  await sheets.spreadsheets.values.append({
+  await sheets.spreadsheets.values.update({
     auth,
     spreadsheetId: spreadSheet_ID,
-    range: `${process.env.SHEET_NAME}!B2`,
+    range: `${process.env.SHEET_NAME}!A2:B`,
     valueInputOption: "USER_ENTERED",
     resource: {
       values: formattedValues,
     },
-    
   });
 }
 
 // Function login
-async function login(page, email, password) {
-  try {
-    // const existCookies = JSON.parse(
-    //   fs.existsSync("./cookies.json")
-    // );
-    // if (!existCookies) {
-      // console.log("Cookies not found, logging in ...");
-      console.log("logging in ...");
-      await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
-      await setTimeout(2000);
-
-      await page.waitForSelector('input[autocomplete="username"]', {
-        visible: true,
-      });
-      await page.type('input[autocomplete="username"]', email, { delay: 300 });
-      await page.waitForSelector('input[autocomplete="current-password"]', {
-        visible: true,
-      });
-      await page.type('input[autocomplete="current-password"]', password, {
-        delay: 300,
-      });
-      await page.click("div.login-button");
-
-      await page.waitForNavigation({ waitUntil: "domcontentloaded" });
-
-      const loginFailedSelector = await page.$("div.alert-danger"); // Check if login failed
-      if (loginFailedSelector) {
-        console.log("Credentials are wrong or login failed ...");
-        return;
-      }
-      console.log("Login Successfully ...");
-
-      // const cookies = await page.cookies();
-      // fs.writeFileSync(
-      //   "./cookies.json",
-      //   JSON.stringify(cookies, null, 2)
-      // );
-      // console.log("Cookies saved, Login Successfully ...");
-    // } else {
-    //   const cookiesString = fs.readFileSync("./cookies.json");
-    //   const cookies = JSON.parse(cookiesString);
-    //   await page.setCookie(...cookies);
-    //   console.log("Cookies found, Login Successfully ...");
-    // }
-
-    return true;
-  } catch (error) {
-    console.log(error);
-    return false;
+async function login(page, email, password, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // const existCookies = fs.existsSync("./cookies.json");
+      // if (!existCookies) {
+      //   console.log("Cookies not found, logging in ...");
+        console.log("logging in ...");
+        await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
+        await setTimeout(2000);
+  
+        await page.waitForSelector('input[autocomplete="username"]', {
+          visible: true,
+        });
+        await page.type('input[autocomplete="username"]', email, { delay: 300 });
+        await page.waitForSelector('input[autocomplete="current-password"]', {
+          visible: true,
+        });
+        await page.type('input[autocomplete="current-password"]', password, {
+          delay: 300,
+        });
+        await page.click("div.login-button");
+  
+        // await page.waitForNavigation({ waitUntil: "domcontentloaded" });
+        await setTimeout(5000)
+  
+        const loginFailedSelector = await page.$("div.alert-danger"); // Check if login failed
+        if (loginFailedSelector) {
+          console.log("Credentials are wrong or login failed ...");
+          return false;
+        }
+        console.log("Login Successfully ...");
+  
+      //   const cookies = await page.cookies();
+      //   fs.writeFileSync("./cookies.json", JSON.stringify(cookies, null, 2));
+      //   console.log("Cookies saved, Login Successfully ...");
+      // } else {
+      //   const cookiesString = fs.readFileSync("./cookies.json");
+      //   const cookies = JSON.parse(cookiesString);
+      //   await page.setCookie(...cookies);
+      //   console.log("Cookies found, Login Successfully ...");
+      // }
+  
+      return true;
+    } catch (error) {
+      console.log(`Attempt ${attempt} failed: ${error.message}`);
+  
+        if (attempt === maxRetries) {
+          console.log("Max retries reached. Login failed.");
+          return false;
+        }
+  
+        console.log("Retrying login ...");
+        await page.reload({ waitUntil: "networkidle2" }); // R
+    }
   }
 }
 
 // Input code
 async function searchCode(page, selector, value, button) {
-  await page.type(selector, value, { delay: 200 });
+  await page.type(selector, value, { delay: 100 });
 
   await page.waitForSelector(button);
   await page.click(button);
@@ -140,89 +147,164 @@ function randomDelay(min, max) {
   return Math.random() * (max - min) + min;
 }
 
+/*
+  Development Setup
+*/
+
 (async () => {
-  try {
-    const browser = await puppeteer.launch({
-      headless: "new",
-      args: [`--no-sandbox`],
-      defaultViewport: {
-        width: 1366,
-        height: 768,
-      },
-    });
-    const page = await browser.newPage()
+    try {
+      const browser = await puppeteer.launch({
+        headless: "new",
+        args: [`--no-sandbox`],
+        defaultViewport: {
+          width: 1366,
+          height: 768,
+        },
+      });
+  
+      // Deploying setup browser
+      // const browser = await puppeteer.launch({
+      //   args: chromium.args,
+      //   // defaultViewport: chromium.defaultViewport,
+      //   defaultViewport: null,
+      //   executablePath: await chromium.executablePath(),
+      //   headless: chromium.headless,
+      // });
+  
+      const page = await browser.newPage();
 
-    // Read spreadsheet
-    const auth = await authorize();
-    const items = await readSpreadsheet(auth);
-    const codes = items.map((item) => item.code);
+      // Deploying set viewPort browser
+      // await page.setViewport({
+      //   width: 1366,
+      //   height: 768,
+      // });
+  
+      // Read spreadsheet
+      const auth = await authorize();
+      const items = await readSpreadsheet(auth);
+      const codes = items.map((item) => item.code);
+      const codeAvailabilityMap = new Map(items.map(({ code, availability }) => [code, availability]));
 
-    // Login
-    let isLoginSuccessfully = await login(page, email, password)
-    if(!isLoginSuccessfully){
+      // Login
+      let isLoginSuccessfully = await login(page, email, password);
+      if (!isLoginSuccessfully) {
         return;
-    }
-
-    // Main pages
-    await page.goto(loginUrl, {waitUntil: 'domcontentloaded'})
-    await setTimeout(2000)
-
-    // Loop codes
-    let result = []
-    let index = 1;
-    for (let code of codes) {
-      try {
-        // Search code
-        console.log(`Checking code : ${index}`);
-        await page.waitForSelector('input[type="search"]');
-        await page.evaluate(
-          () => (document.querySelector('input[type="search"]').value = "")
-        );
-        await searchCode(
-          page,
-          'input[type="search"]',
-          code,
-          "button.como-search-btn"
-        );
-        await setTimeout(randomDelay(2, 3) * 1000);
-
-        // Alternative handle product
-        // const itemsSelector = 'div.como-prod-tile-st-wrapper > section'
-        // await page.waitForSelector(itemsSelector, {timeout: 10000})
-        // const items = await page.evaluate(()=> {
-        //   const itemsSelector  = document.querySelectorAll('div.como-prod-tile-st-wrapper > section')
-        //   return itemsSelector? itemsSelector.length : 0
-        // })
-
-        // if(!items || items.length === 0){
-        //   console.log(`=== Item not found`)
-        //   continue;
-        // }
-
-        const productNotfound = await page.$("div.alert.alert-info");
-        if (productNotfound) {
-          result.push("Not Found");
-          continue;
-        }
-
-        const statusAvailable = await page.evaluate(() => {
-          const statusSelector = document.querySelector(
-            'span[style="text-decoration: underline;"]'
-          );
-          return statusSelector ? statusSelector.textContent : "";
-        });
-
-        result.push(statusAvailable);
-        index++;
-      } catch (error) {
-        console.log(error);
       }
-    }
+  
+      // Main pages
+      await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
+      await setTimeout(3000);
 
-    await writeSpreadsheet(auth, result);
-    console.log("All codes tracked successfully");
-    await browser.close();
-  } catch (error) {
-    console.log(error);
+      // Loop codes
+      for (let code of codes) {
+        let retries = 0;
+        let maxRetries = 3;
+        let codeLoaded = false;
+
+        // Retry codes if not loaded
+        while (retries < maxRetries && !codeLoaded) {
+          try {
+            // Skip if already updated
+            // if (codeAvailabilityMap.get(code)) continue; 
+            
+            // Search code
+            console.log(`Checking code : ${code} (Attempt: ${retries + 1})`);
+            await page.waitForSelector('input[type="search"]');
+            await page.evaluate(
+              () => (document.querySelector('input[type="search"]').value = "")
+            );
+            await searchCode(
+              page,
+              'input[type="search"]',
+              code,
+              "button.como-search-btn"
+            );
+            await setTimeout(randomDelay(2, 3) * 1000);
+    
+            // Wait for product tile or check if alert for no product
+            const productTileExists = await page
+              .waitForSelector("div.como-prod-tile-st-wrapper", { timeout: 5000 })
+              .catch(() => null);
+            await setTimeout(2000);
+    
+            if (!productTileExists) {
+              // If the selector is not found, check if there's an alert indicating no product
+              const productNotFound = await page.$("div.alert.alert-info");
+              if (productNotFound) {
+                codeAvailabilityMap.set(code, "Not Found");
+                codeLoaded = true; // Stop retrying if code is not found
+              } else {
+                codeAvailabilityMap.set(code, "Not loaded");
+                retries++; // Increment retry counter
+                if (retries >= maxRetries) {
+                  console.log(`Max retries reached for code: ${code}`);
+                  codeLoaded = true; // Stop retrying after max retries
+                }
+              }
+            } else {
+              const statusAvailable = await page.evaluate(() => {
+                const statusSelector = document.querySelector(
+                  'span[style="text-decoration: underline;"]'
+                );
+                return statusSelector ? statusSelector.textContent : "Not Available";
+              });
+  
+              codeAvailabilityMap.set(code, statusAvailable);
+              codeLoaded = true; // Code loaded successfully, no more retries needed
+            }
+          } catch (error) {
+            console.log(error);
+            retries++; // Increment retry counter if an error occurs
+            if (retries >= maxRetries) {
+              codeAvailabilityMap.set(code, "Code Error or Not Found");
+              codeLoaded = true; // Stop retrying after max retries even on error
+            }
+          }
+        }
+      }
+  
+      // Convert the map to arrays for writing
+      const formattedResults = Array.from(
+        codeAvailabilityMap,
+        ([code, availability]) => ({ code, availability })
+      );
+  
+      await writeSpreadsheet(auth, formattedResults);
+      console.log("All codes tracked successfully");
+      await browser.close();
+    } catch (error) {
+      console.log(error);
+    }
   }
-})();
+)()
+
+/*
+  End
+*/
+
+
+/*
+  Deployment Setup
+*/
+
+// async function main() {}
+
+// export const handler = async (event) => {
+//   try {
+//     await main();
+//     const response = {
+//       statusCode: 200,
+//       body: JSON.stringify("All Products Loaded !!"),
+//     };
+//     return response;
+//   } catch (error) {
+//     return {
+//       statusCode: 500,
+//       body: JSON.stringify("Failed to Load Products !"),
+//     };
+//   }
+// };
+
+/*
+  End
+*/

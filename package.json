@@ -4,13 +4,15 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start:dev": "node index.js"
+    "start:dev": "node index.js",
+    "zip": "zip -r meinl.zip build/ index.js node_modules package.json package-lock.json credential.json" 
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@sparticuz/chromium": "^127.0.0",
     "dotenv": "^16.4.5",
     "googleapis": "^140.0.1",
     "puppeteer": "^22.13.1",
