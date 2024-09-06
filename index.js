@@ -196,7 +196,18 @@ function randomDelay(min, max) {
     for (const sheetName of sheetNames) {
       console.log(`Processing sheet: ${sheetName}`);
 
-      const items = await readSpreadsheet(auth, sheetName);
+      // const items = await readSpreadsheet(auth, sheetName);
+      let items;
+      try {
+        items = await readSpreadsheet(auth, sheetName);
+      } catch (error) {
+        if (error.message.includes("Unable to parse range")) {
+          console.log(`Sheet "${sheetName}" not found. Skipping...`);
+          continue; // Skip to the next sheet if not found
+        } else {
+          throw error; // Rethrow any other unexpected errors
+        }
+      }
       const codes = items.map((item) => item.code);
       const codeAvailabilityMap = new Map(items.map(({ code, availability }) => [code, availability]));
 
