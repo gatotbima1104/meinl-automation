@@ -47,7 +47,7 @@ async function readSpreadsheet(auth, sheetName) {
   });
 
   const rows = response.data.values;
-  if (rows.length) {
+  if (rows && rows.length) {
     return rows.slice(1).map((row) => ({
       code: row[0],
       availability: row[1],
@@ -55,6 +55,26 @@ async function readSpreadsheet(auth, sheetName) {
   } else {
     throw new Error("No data found.");
   }
+}
+
+// Handle duplicates and fill missing availability
+function handleDuplicates(values) {
+  const codeMap = new Map(); // Stores the first occurrence of the code
+  const processedValues = [];
+
+  values.forEach(({ code, availability }) => {
+    if (codeMap.has(code)) {
+      // If the code is duplicated, use the availability of the first occurrence
+      const firstAvailability = codeMap.get(code);
+      processedValues.push({ code, availability: availability || firstAvailability });
+    } else {
+      // Store the first occurrence of the code
+      codeMap.set(code, availability);
+      processedValues.push({ code, availability });
+    }
+  });
+
+  return processedValues;
 }
 
 // Function Write SpreadSheet
@@ -65,7 +85,7 @@ async function writeSpreadsheet(auth, sheetName, values) {
   });
 
   // Formatted values
-  const formattedValues = values.map(({ code, availability }) => [code, availability]);
+  const formattedValues = handleDuplicates(values).map(({ code, availability }) => [code, availability]);
 
   await sheets.spreadsheets.values.update({
     auth,
@@ -209,59 +229,135 @@ function randomDelay(min, max) {
         }
       }
       const codes = items.map((item) => item.code);
-      const codeAvailabilityMap = new Map(items.map(({ code, availability }) => [code, availability]));
+      // const codeAvailabilityMap = new Map(items.map(({ code, availability }) => [code, availability]));
 
-      // Login
-      // let isLoginSuccessfully = await login(page, email, password);
-      // if (!isLoginSuccessfully) {
-      //   return;
+      // Remove new Map(), only using .map
+      const availabilityResults = items.map(({ code }) => ({
+        code,
+        availability: undefined, // Initialize with undefined
+      }));
+
+      /*
+        Old Codes Loop
+      */
+      // Loop codes
+      // for (let code of codes) {
+      //   let retries = 0;
+      //   let maxRetries = 3;
+      //   let codeLoaded = false;
+
+      //   // Retry codes if not loaded
+      //   while (retries < maxRetries && !codeLoaded) {
+      //     try {
+      //       // Skip if already updated
+      //       // if (codeAvailabilityMap.get(code)) continue; 
+            
+      //       // Search code
+      //       // console.log(`Checking code : ${code} (Attempt: ${retries + 1})`);
+      //       console.log(`Checking code: ${code} (Sheet: ${sheetName}, Attempt: ${retries + 1})`);
+      //       await page.waitForSelector('input[type="search"]');
+      //       await page.evaluate(
+      //         () => (document.querySelector('input[type="search"]').value = "")
+      //       );
+      //       await searchCode(
+      //         page,
+      //         'input[type="search"]',
+      //         code,
+      //         "button.como-search-btn"
+      //       );
+      //       await setTimeout(randomDelay(2, 3) * 1000);
+    
+      //       // Wait for product tile or check if alert for no product
+      //       const productTileExists = await page
+      //         .waitForSelector("div.como-prod-tile-st-wrapper", { timeout: 5000 })
+      //         .catch(() => null);
+      //       await setTimeout(2000);
+    
+      //       if (!productTileExists) {
+      //         // If the selector is not found, check if there's an alert indicating no product
+      //         const productNotFound = await page.$("div.alert.alert-info");
+      //         if (productNotFound) {
+      //           codeAvailabilityMap.set(code, "Not Found");
+      //           codeLoaded = true; // Stop retrying if code is not found
+      //         } else {
+      //           codeAvailabilityMap.set(code, "Not loaded");
+      //           retries++; // Increment retry counter
+      //           if (retries >= maxRetries) {
+      //             console.log(`Max retries reached for code: ${code}`);
+      //             codeLoaded = true; // Stop retrying after max retries
+      //           }
+      //         }
+      //       } else {
+      //         const statusAvailable = await page.evaluate(() => {
+      //           const statusSelector = document.querySelector(
+      //             'span[style="text-decoration: underline;"]'
+      //           );
+      //           return statusSelector ? statusSelector.textContent : "Not Available";
+      //         });
+  
+      //         codeAvailabilityMap.set(code, statusAvailable);
+      //         codeLoaded = true; // Code loaded successfully, no more retries needed
+      //       }
+      //     } catch (error) {
+      //       console.log(error);
+      //       retries++; // Increment retry counter if an error occurs
+      //       if (retries >= maxRetries) {
+      //         codeAvailabilityMap.set(code, "Code Error or Not Found");
+      //         codeLoaded = true; // Stop retrying after max retries even on error
+      //       }
+      //     }
+      //   }
       // }
   
-      // Main pages
-      // await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
-      // await setTimeout(3000);
+      // // Convert the map to arrays for writing
+      // const formattedResults = Array.from(
+      //   codeAvailabilityMap,
+      //   ([code, availability]) => ({ code, availability })
+      // );
 
-      // Loop codes
+      /*
+        End Loop
+      */
+
+      /*
+        New Codes Loop
+      */
       for (let code of codes) {
         let retries = 0;
         let maxRetries = 3;
         let codeLoaded = false;
-
+      
         // Retry codes if not loaded
         while (retries < maxRetries && !codeLoaded) {
           try {
-            // Skip if already updated
-            // if (codeAvailabilityMap.get(code)) continue; 
-            
-            // Search code
-            // console.log(`Checking code : ${code} (Attempt: ${retries + 1})`);
             console.log(`Checking code: ${code} (Sheet: ${sheetName}, Attempt: ${retries + 1})`);
             await page.waitForSelector('input[type="search"]');
-            await page.evaluate(
-              () => (document.querySelector('input[type="search"]').value = "")
-            );
-            await searchCode(
-              page,
-              'input[type="search"]',
-              code,
-              "button.como-search-btn"
-            );
+            await page.evaluate(() => (document.querySelector('input[type="search"]').value = ""));
+            await searchCode(page, 'input[type="search"]', code, "button.como-search-btn");
             await setTimeout(randomDelay(2, 3) * 1000);
-    
+      
             // Wait for product tile or check if alert for no product
-            const productTileExists = await page
-              .waitForSelector("div.como-prod-tile-st-wrapper", { timeout: 5000 })
-              .catch(() => null);
+            const productTileExists = await page.waitForSelector("div.como-prod-tile-st-wrapper", { timeout: 5000 }).catch(() => null);
             await setTimeout(2000);
-    
+      
             if (!productTileExists) {
               // If the selector is not found, check if there's an alert indicating no product
               const productNotFound = await page.$("div.alert.alert-info");
               if (productNotFound) {
-                codeAvailabilityMap.set(code, "Not Found");
+                // Update all occurrences of the code in the availability results
+                availabilityResults.forEach(result => {
+                  if (result.code === code) {
+                    result.availability = "Not Found";
+                  }
+                });
                 codeLoaded = true; // Stop retrying if code is not found
               } else {
-                codeAvailabilityMap.set(code, "Not loaded");
+                // Update all occurrences of the code in the availability results
+                availabilityResults.forEach(result => {
+                  if (result.code === code) {
+                    result.availability = "Not Loaded";
+                  }
+                });
                 retries++; // Increment retry counter
                 if (retries >= maxRetries) {
                   console.log(`Max retries reached for code: ${code}`);
@@ -270,33 +366,35 @@ function randomDelay(min, max) {
               }
             } else {
               const statusAvailable = await page.evaluate(() => {
-                const statusSelector = document.querySelector(
-                  'span[style="text-decoration: underline;"]'
-                );
+                const statusSelector = document.querySelector('span[style="text-decoration: underline;"]');
                 return statusSelector ? statusSelector.textContent : "Not Available";
               });
-  
-              codeAvailabilityMap.set(code, statusAvailable);
+      
+              // Update all occurrences of the code in the availability results
+              availabilityResults.forEach(result => {
+                if (result.code === code) {
+                  result.availability = statusAvailable;
+                }
+              });
               codeLoaded = true; // Code loaded successfully, no more retries needed
             }
           } catch (error) {
-            console.log(error);
+            console.log(`Error checking code: ${code}. Error: ${error}`);
             retries++; // Increment retry counter if an error occurs
             if (retries >= maxRetries) {
-              codeAvailabilityMap.set(code, "Code Error or Not Found");
+              // Update all occurrences of the code in the availability results
+              availabilityResults.forEach(result => {
+                if (result.code === code) {
+                  result.availability = "Not Loaded/Not Found";
+                }
+              });
               codeLoaded = true; // Stop retrying after max retries even on error
             }
           }
         }
       }
   
-      // Convert the map to arrays for writing
-      const formattedResults = Array.from(
-        codeAvailabilityMap,
-        ([code, availability]) => ({ code, availability })
-      );
-  
-      await writeSpreadsheet(auth, sheetName, formattedResults);
+      await writeSpreadsheet(auth, sheetName, availabilityResults);
       console.log(`Finished processing sheet: ${sheetName}`);
     }
       console.log("All codes tracked successfully");
