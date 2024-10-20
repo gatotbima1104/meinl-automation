@@ -171,6 +171,19 @@ function randomDelay(min, max) {
   return Math.random() * (max - min) + min;
 }
 
+// append to result
+function appendResult(availabilityResults, code, value){
+  try {
+    availabilityResults.forEach(result => {
+      if (result.code === code) {
+        result.availability = value;
+      }
+    });
+  } catch (error) {
+    console.log(error)
+  }
+}
+
 /*
   Development Setup
 */
@@ -344,20 +357,12 @@ function randomDelay(min, max) {
               // If the selector is not found, check if there's an alert indicating no product
               const productNotFound = await page.$("div.alert.alert-info");
               if (productNotFound) {
-                // Update all occurrences of the code in the availability results
-                availabilityResults.forEach(result => {
-                  if (result.code === code) {
-                    result.availability = "Not Found";
-                  }
-                });
-                codeLoaded = true; // Stop retrying if code is not found
+                // Update all occurrences of the code in the availability results                
+                appendResult(availabilityResults, code, "Not Found");
+                codeLoaded = true
               } else {
                 // Update all occurrences of the code in the availability results
-                availabilityResults.forEach(result => {
-                  if (result.code === code) {
-                    result.availability = "Not Loaded";
-                  }
-                });
+                appendResult(availabilityResults, code, "Not Loaded");
                 retries++; // Increment retry counter
                 if (retries >= maxRetries) {
                   console.log(`Max retries reached for code: ${code}`);
@@ -365,29 +370,31 @@ function randomDelay(min, max) {
                 }
               }
             } else {
-              const statusAvailable = await page.evaluate(() => {
-                const statusSelector = document.querySelector('span[style="text-decoration: underline;"]');
-                return statusSelector ? statusSelector.textContent : "Not Available";
-              });
-      
-              // Update all occurrences of the code in the availability results
-              availabilityResults.forEach(result => {
-                if (result.code === code) {
-                  result.availability = statusAvailable;
-                }
-              });
-              codeLoaded = true; // Code loaded successfully, no more retries needed
+              const productCode = await page.evaluate(()=> {
+                const code = document.querySelector('div.b2b-label1.d-flex.align-items-center')
+                return code? code.textContent : "Null"
+              })
+
+              if(productCode == code){
+                const statusAvailable = await page.evaluate(() => {
+                  const statusSelector = document.querySelector('span[style="text-decoration: underline;"]');
+                  return statusSelector ? statusSelector.textContent : "Not Available";
+                });
+        
+                // Update all occurrences of the code in the availability results
+                appendResult(availabilityResults, code, statusAvailable)
+                codeLoaded = true; // Code loaded successfully, no more retries needed
+              }else{
+                appendResult(availabilityResults, code, "Not Found")
+                codeLoaded = true; // Code loaded successfully, no more retries needed
+              }
             }
           } catch (error) {
             console.log(`Error checking code: ${code}. Error: ${error}`);
             retries++; // Increment retry counter if an error occurs
             if (retries >= maxRetries) {
               // Update all occurrences of the code in the availability results
-              availabilityResults.forEach(result => {
-                if (result.code === code) {
-                  result.availability = "Not Loaded/Not Found";
-                }
-              });
+              appendResult(availabilityResults, code, "Not Loaded/Not Found")
               codeLoaded = true; // Stop retrying after max retries even on error
             }
           }
